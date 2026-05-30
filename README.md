@@ -1,4 +1,4 @@
-## 🌍 Aspclassic-Mysql-Crud
+## 🌍 Aspclassic-Crud-Mysql
 Exemplo de criação de CRUD em ASP Clássico com banco de dados MySQL.
 
 #### O que voçê vai ver nesse Projeto
