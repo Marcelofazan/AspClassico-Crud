@@ -1,7 +1,7 @@
 ## 🌐 Aspclassic-Crud
 Exemplo de criação de CRUD em ASP Clássico com banco de dados MySQL.
 
-#### 📋 O que voçê vai ver nesse Projeto
+#### 📋 O que você vai encontrar neste projeto
 | Tecnologia | Descrição |
 |-----------|-----------|
 | **ASP Clássico** | Estrutura de processamento que permite executar scripts no lado do servidor (VBScript) |
