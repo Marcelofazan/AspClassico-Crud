@@ -9,6 +9,9 @@ Exemplo de CRUD em ASP Clássico com banco de dados MySQL.
 | **MySQL Driver Unicode** | Componente que permite uma aplicação Windows se comunicar com um banco de dados MySQL |
 | **Paginação** | Utilização de métodos internos do objeto ADO para lidar com paginação |
 
+#### 💬 Requisitos do Projeto
+- Para executar a aplicação é necessário executar o Script do MySQL.
+  
 #### ⚠️ String de conexão do banco
 Modifique a string de conexão no arquivo **abreconexao.asp**, no trecho indicado:
 
