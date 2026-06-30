@@ -5,16 +5,12 @@ pool:
   vmImage: 'windows-latest'
 
 steps:
-# 1. Baixar e instalar silenciosamente o MySQL ODBC Driver 5.3 (Necessário para o ASP Clássico)
+# 1. Instalar o MySQL ODBC Driver via Chocolatey (Sem risco de bloqueio de download)
 - powershell: |
-    echo "Baixando o driver MySQL ODBC 5.3..."
-    # Baixa o instalador MSI oficial do driver de 64 bits
-    Invoke-WebRequest -Uri "https://mysql.com" -OutFile "mysql-odbc.msi"
-    
-    echo "Instalando o driver ODBC..."
-    # Instala de forma silenciosa no agente do Azure
-    Start-Process msiexec.exe -ArgumentList '/i mysql-odbc.msi /quiet /norestart' -Wait
-    echo "Driver ODBC instalado com sucesso!"
+    echo "Instalando o conector MySQL ODBC de forma silenciosa via Chocolatey..."
+    # Força o Chocolatey a instalar a versão estável do conector
+    choco install mysql-connector-odbc --version=8.0.28 -y --no-progress
+    echo "Driver ODBC configurado com sucesso no agente do Azure!"
   displayName: 'Instalar MySQL ODBC Driver'
 
 # 2. Iniciar o serviço do MySQL nativo do Windows do Azure
@@ -25,11 +21,11 @@ steps:
     mysql -u root -e "SELECT VERSION();"
   displayName: 'Iniciar e Verificar MySQL Server'
 
-# 3. Criar o Banco de Dados e as Tabelas (Nome corrigido para caixa baixa: simplesweb)
+# 3. Criar o Banco de Dados e as Tabelas (Nome em minúsculo: simplesweb)
 - powershell: |
     $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
     
-    # Cria o banco exatamente com o nome da sua string de conexão
+    # Cria o banco exatamente como configurado na sua string "DATABASE=simplesweb"
     mysql -u root -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
     
     # Cria a tabela pessoa
@@ -53,14 +49,11 @@ steps:
     Write-Host "Banco de dados simplesweb pronto para conexões ODBC!"
   displayName: 'Configurar Schema do Banco de Dados'
 
-# 4. Executar os Testes automatizados da sua aplicação
-# Se você tiver um script de teste (ex: via Node, VBScript ou ferramenta de testes HTTP)
-# Caso não use testes automatizados nesta etapa, você pode remover ou comentar este bloco.
+# 4. Executar os Testes automatizados (Insira os comandos de teste da sua aplicação se houver)
 - powershell: |
     echo "Executando validação de rotas/testes da aplicação..."
-    # Insira aqui o comando que roda seus testes, por exemplo:
-    # cscript //nologo seus_testes.vbs
-    # Ou se você usa um validador em Node/Axios: npm install && npm test
+    # Exemplo caso use testes em Node/Axios: 
+    # npm install && npm test
   displayName: 'Executar Testes de Unidade / Integração'
 
 # 5. Compactar arquivos ASP (Seu código original)
@@ -80,4 +73,3 @@ steps:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
     ArtifactName: 'drop'
     publishLocation: 'Container'
-    
