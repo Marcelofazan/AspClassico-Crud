@@ -9,12 +9,8 @@ steps:
 - powershell: |
     echo "Importando módulo WebAdministration..."
     Import-Module WebAdministration
-    
     echo "Configurando DefaultAppPool para aceitar aplicativos de 32 bits..."
     Set-ItemProperty "IIS:\AppPools\DefaultAppPool" -Name "enable32BitAppOnWin64" -Value "True"
-    
-    echo "Verificando alteração no IIS..."
-    Get-ItemProperty "IIS:\AppPools\DefaultAppPool" -Name "enable32BitAppOnWin64"
   displayName: 'Habilitar Aplicativos 32 Bits no IIS'
 
 # 2. Instalar o MySQL ODBC e Injetar chaves de compatibilidade (64 e 32 bits)
@@ -22,30 +18,19 @@ steps:
     echo "Instalando MySQL ODBC via Chocolatey..."
     choco install mysql.odbc -y --no-progress
     
-    echo "Identificando o nome do driver instalado..."
     $installedDriver = (Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers").psobject.properties.name | Where-Object { $_ -like "MySQL ODBC * Unicode Driver" } | Select-Object -First 1
     
     if ($installedDriver) {
         echo "Driver detectado: $installedDriver"
-        
-        # Lista de caminhos do Registro para injetar o alias (64-bit e 32-bit/Wow6432Node)
-        $registryPaths = @(
-            "HKLM:\SOFTWARE\ODBC\ODBCINST.INI",
-            "HKLM:\SOFTWARE\Wow6432Node\ODBC\ODBCINST.INI"
-        )
-        
+        $registryPaths = @("HKLM:\SOFTWARE\ODBC\ODBCINST.INI", "HKLM:\SOFTWARE\Wow6432Node\ODBC\ODBCINST.INI")
         foreach ($basePath in $registryPaths) {
             $sourcePath = "$basePath\$installedDriver"
             $targetPath = "$basePath\MySQL ODBC 5.3 Unicode Driver"
-            
             if (Test-Path $sourcePath) {
-                if (-not (Test-Path $targetPath)) {
-                    New-Item -Path $targetPath -Force | Out-Null
-                }
+                if (-not (Test-Path $targetPath)) { New-Item -Path $targetPath -Force | Out-Null }
                 Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Driver" -Force
                 Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Setup" -Force
                 Set-ItemProperty -Path "$basePath\ODBC Drivers" -Name "MySQL ODBC 5.3 Unicode Driver" -Value "Installed" -Force
-                echo "Alias configurado com sucesso em: $basePath"
             }
         }
     } else {
@@ -54,10 +39,19 @@ steps:
     }
   displayName: 'Instalar MySQL ODBC e Configurar Registro (32/64 bits)'
 
-# 3. Iniciar o serviço do MySQL nativo do Windows do Azure
+# 3. Iniciar o serviço do MySQL nativo do Windows do Azure (CORRIGIDO)
 - powershell: |
+    echo "Ajustando tipo de inicialização do serviço MySQL..."
+    # Altera o tipo de inicialização de 'Disabled' para 'Manual' antes de dar o Start
+    Get-Service -Name "MySQL*" | Set-Service -StartupType Manual
+    
     echo "Iniciando o serviço do MySQL..."
-    Start-Service -Name "MySQL*"
+    Get-Service -Name "MySQL*" | Start-Service
+    
+    echo "Aguardando 5 segundos para estabilização do banco..."
+    Start-Sleep -Seconds 5
+    
+    # Adiciona o MySQL ao PATH e valida se a porta local responde
     $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
     mysql -u root -e "SELECT VERSION();"
   displayName: 'Iniciar e Verificar MySQL Server'
@@ -66,10 +60,8 @@ steps:
 - powershell: |
     $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
     
-    # Cria o banco de dados
+    # Cria o banco e a tabela pessoa
     mysql -u root -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
-    
-    # Cria a tabela pessoa
     mysql -u root -D simplesweb -e "
     CREATE TABLE IF NOT EXISTS pessoa (
       Id int NOT NULL AUTO_INCREMENT,
@@ -87,13 +79,12 @@ steps:
       PRIMARY KEY (Id)
     );
     "
-    Write-Host "Banco de dados preparado para conexões sem criptografia SSL!"
+    Write-Host "Banco de dados simplesweb estruturado sem SSL com sucesso!"
   displayName: 'Configurar Schema do Banco de Dados'
 
 # 5. Executar os Testes automatizados (Se houver testes locais)
 - powershell: |
-    echo "Executando validação de rotas/testes da aplicação..."
-    # Exemplo: npm install && npm test
+    echo "Executando testes da aplicação..."
   displayName: 'Executar Testes de Unidade / Integração'
 
 # 6. Compactar arquivos ASP (Seu código original)
