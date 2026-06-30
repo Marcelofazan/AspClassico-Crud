@@ -5,15 +5,56 @@ pool:
   vmImage: 'windows-latest'
 
 steps:
-# 1. Instalar o MySQL ODBC Driver 5.3 exato via Chocolatey (Nome correto: mysql.odbc)
+# 1. Habilitar o suporte a Aplicativos 32 Bits no IIS (DefaultAppPool)
 - powershell: |
-    echo "Instalando o conector MySQL ODBC 5.3 de forma silenciosa..."
-    # Usando o nome correto 'mysql.odbc' e travando na versão correspondente à sua string de conexão
-    choco install mysql.odbc --version=5.3.14 -y --no-progress
-    echo "Driver ODBC 5.3 instalado com sucesso no agente!"
-  displayName: 'Instalar MySQL ODBC Driver'
+    echo "Importando módulo WebAdministration..."
+    Import-Module WebAdministration
+    
+    echo "Configurando DefaultAppPool para aceitar aplicativos de 32 bits..."
+    Set-ItemProperty "IIS:\AppPools\DefaultAppPool" -Name "enable32BitAppOnWin64" -Value "True"
+    
+    echo "Verificando alteração no IIS..."
+    Get-ItemProperty "IIS:\AppPools\DefaultAppPool" -Name "enable32BitAppOnWin64"
+  displayName: 'Habilitar Aplicativos 32 Bits no IIS'
 
-# 2. Iniciar o serviço do MySQL nativo do Windows do Azure
+# 2. Instalar o MySQL ODBC e Injetar chaves de compatibilidade (64 e 32 bits)
+- powershell: |
+    echo "Instalando MySQL ODBC via Chocolatey..."
+    choco install mysql.odbc -y --no-progress
+    
+    echo "Identificando o nome do driver instalado..."
+    $installedDriver = (Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers").psobject.properties.name | Where-Object { $_ -like "MySQL ODBC * Unicode Driver" } | Select-Object -First 1
+    
+    if ($installedDriver) {
+        echo "Driver detectado: $installedDriver"
+        
+        # Lista de caminhos do Registro para injetar o alias (64-bit e 32-bit/Wow6432Node)
+        $registryPaths = @(
+            "HKLM:\SOFTWARE\ODBC\ODBCINST.INI",
+            "HKLM:\SOFTWARE\Wow6432Node\ODBC\ODBCINST.INI"
+        )
+        
+        foreach ($basePath in $registryPaths) {
+            $sourcePath = "$basePath\$installedDriver"
+            $targetPath = "$basePath\MySQL ODBC 5.3 Unicode Driver"
+            
+            if (Test-Path $sourcePath) {
+                if (-not (Test-Path $targetPath)) {
+                    New-Item -Path $targetPath -Force | Out-Null
+                }
+                Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Driver" -Force
+                Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Setup" -Force
+                Set-ItemProperty -Path "$basePath\ODBC Drivers" -Name "MySQL ODBC 5.3 Unicode Driver" -Value "Installed" -Force
+                echo "Alias configurado com sucesso em: $basePath"
+            }
+        }
+    } else {
+        Write-Error "Falha ao localizar o driver instalado."
+        exit 1
+    }
+  displayName: 'Instalar MySQL ODBC e Configurar Registro (32/64 bits)'
+
+# 3. Iniciar o serviço do MySQL nativo do Windows do Azure
 - powershell: |
     echo "Iniciando o serviço do MySQL..."
     Start-Service -Name "MySQL*"
@@ -21,11 +62,11 @@ steps:
     mysql -u root -e "SELECT VERSION();"
   displayName: 'Iniciar e Verificar MySQL Server'
 
-# 3. Criar o Banco de Dados e as Tabelas (Nome em minúsculo: simplesweb)
+# 4. Criar o Banco de Dados e as Tabelas (DATABASE=simplesweb)
 - powershell: |
     $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
     
-    # Cria o banco exatamente como configurado na sua string "DATABASE=simplesweb"
+    # Cria o banco de dados
     mysql -u root -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
     
     # Cria a tabela pessoa
@@ -46,16 +87,16 @@ steps:
       PRIMARY KEY (Id)
     );
     "
-    Write-Host "Banco de dados simplesweb pronto para conexões ODBC!"
+    Write-Host "Banco de dados preparado para conexões sem criptografia SSL!"
   displayName: 'Configurar Schema do Banco de Dados'
 
-# 4. Executar os Testes automatizados (Adicione aqui se você usar testes locais)
+# 5. Executar os Testes automatizados (Se houver testes locais)
 - powershell: |
     echo "Executando validação de rotas/testes da aplicação..."
     # Exemplo: npm install && npm test
   displayName: 'Executar Testes de Unidade / Integração'
 
-# 5. Compactar arquivos ASP (Seu código original)
+# 6. Compactar arquivos ASP (Seu código original)
 - task: ArchiveFiles@2
   displayName: 'Compactar arquivos ASP'
   inputs:
@@ -65,7 +106,7 @@ steps:
     archiveFile: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
     replaceExistingArchive: true
 
-# 6. Publicar Artefato no Azure (Seu código original)
+# 7. Publicar Artefato no Azure (Seu código original)
 - task: PublishBuildArtifacts@1
   displayName: 'Publicar Artefato no Azure'
   inputs:
