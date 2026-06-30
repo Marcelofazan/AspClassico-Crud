@@ -34,11 +34,12 @@ steps:
 # 3. Inicializar e Iniciar o MySQL via Binário com Senha Definida
 - powershell: |
     $mysqlPath = "C:\Program Files\MySQL\MySQL Server 8.0\bin"
-    $env:Path += ";$mysqlPath"
     
     # Criar um diretório de dados limpo para evitar conflitos de permissão
     $dataDir = "$(Agent.TempDirectory)\mysql-data"
-    New-Item -ItemType Directory -Force -Path $dataDir
+    if (-not (Test-Path $dataDir)) {
+        New-Item -ItemType Directory -Force -Path $dataDir
+    }
     
     # Criar arquivo temporário para definir a senha do root na inicialização
     $initFile = "$(Agent.TempDirectory)\mysql-init.txt"
@@ -50,11 +51,16 @@ steps:
     echo "Iniciando o MySQL Server carregando as permissões e a senha..."
     Start-Process -FilePath "$mysqlPath\mysqld.exe" -ArgumentList "--datadir=$dataDir --init-file=$initFile --skip-ssl" -WindowStyle Hidden
     
-    echo "Aguardando 12 segundos para o banco de dados iniciar na porta 3306..."
-    Start-Sleep -Seconds 12
+    echo "Aguardando 15 segundos para o banco de dados iniciar na porta 3306..."
+    Start-Sleep -Seconds 15
     
-    echo "Testando conectividade local com a nova senha..."
-    mysql -u root -p"root" -h 127.0.0.1 -e "SELECT VERSION();"
+    echo "Testando conectividade local usando o caminho absoluto do cliente..."
+    & "$mysqlPath\mysql.exe" -u root -p"root" -h 127.0.0.1 -e "SELECT VERSION();"
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Falha ao conectar no MySQL Server local."
+        exit 1
+    }
   displayName: 'Iniciar e Verificar MySQL Server'
   
 # 4. Criar o Banco de Dados e as Tabelas (DATABASE=simplesweb)
