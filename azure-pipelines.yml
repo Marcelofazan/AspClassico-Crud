@@ -1,5 +1,12 @@
 trigger:
-- main
+  branches:
+    include:
+      - main
+  # Resolve o problema de autocommit: ignora a execução se apenas estes arquivos mudarem
+  paths:
+    exclude:
+      - 'caminho/do/seu/arquivo_gerado_automaticamente.txt'
+      - 'pasta_do_autocommit/*'
 
 pool:
   vmImage: 'windows-latest'
@@ -24,7 +31,7 @@ steps:
     echo "Driver nativo de 32 bits instalado com sucesso!"
   displayName: 'Instalar MySQL ODBC 5.3.13 (32-bit)'
 
-# 3. Inicializar e Iniciar o MySQL via Binário (Sem depender de serviço do Windows)
+# 3. Inicializar e Iniciar o MySQL via Binário com Senha Definida
 - powershell: |
     $mysqlPath = "C:\Program Files\MySQL\MySQL Server 8.0\bin"
     $env:Path += ";$mysqlPath"
@@ -33,17 +40,21 @@ steps:
     $dataDir = "$(Agent.TempDirectory)\mysql-data"
     New-Item -ItemType Directory -Force -Path $dataDir
     
+    # Criar arquivo temporário para definir a senha do root na inicialização
+    $initFile = "$(Agent.TempDirectory)\mysql-init.txt"
+    "ALTER USER 'root'@'localhost' IDENTIFIED BY 'root';" | Out-File -FilePath $initFile -Encoding ascii
+    
     echo "Inicializando o diretório de dados do MySQL..."
     & "$mysqlPath\mysqld.exe" --initialize-insecure --datadir=$dataDir
     
-    echo "Iniciando o MySQL Server em segundo plano..."
-    Start-Process -FilePath "$mysqlPath\mysqld.exe" -ArgumentList "--datadir=$dataDir --skip-grant-tables --skip-ssl" -WindowStyle Hidden
+    echo "Iniciando o MySQL Server carregando as permissões e a senha..."
+    Start-Process -FilePath "$mysqlPath\mysqld.exe" -ArgumentList "--datadir=$dataDir --init-file=$initFile --skip-ssl" -WindowStyle Hidden
     
     echo "Aguardando 12 segundos para o banco de dados iniciar na porta 3306..."
     Start-Sleep -Seconds 12
     
-    echo "Testando conectividade local do cliente MySQL..."
-    mysql -u root -h 127.0.0.1 -e "SELECT VERSION();"
+    echo "Testando conectividade local com a nova senha..."
+    mysql -u root -p"root" -h 127.0.0.1 -e "SELECT VERSION();"
   displayName: 'Iniciar e Verificar MySQL Server'
   
 # 4. Criar o Banco de Dados e as Tabelas (DATABASE=simplesweb)
