@@ -1,0 +1,22 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest' # Necessário para gerar pacotes do Windows
+
+steps:
+- task: ArchiveFiles@2
+  displayName: 'Compactar arquivos ASP'
+  inputs:
+    rootFolderOrFile: '$(System.DefaultWorkingDirectory)'
+    includeRootFolder: false
+    archiveType: 'zip'
+    archiveFile: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
+    replaceExistingArchive: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publicar Artefato no Azure'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
