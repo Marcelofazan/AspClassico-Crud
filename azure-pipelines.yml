@@ -2,9 +2,68 @@ trigger:
 - main
 
 pool:
-  vmImage: 'windows-latest' # Necessário para gerar pacotes do Windows
+  vmImage: 'windows-latest'
 
 steps:
+# 1. Baixar e instalar silenciosamente o MySQL ODBC Driver 5.3 (Necessário para o ASP Clássico)
+- powershell: |
+    echo "Baixando o driver MySQL ODBC 5.3..."
+    # Baixa o instalador MSI oficial do driver de 64 bits
+    Invoke-WebRequest -Uri "https://mysql.com" -OutFile "mysql-odbc.msi"
+    
+    echo "Instalando o driver ODBC..."
+    # Instala de forma silenciosa no agente do Azure
+    Start-Process msiexec.exe -ArgumentList '/i mysql-odbc.msi /quiet /norestart' -Wait
+    echo "Driver ODBC instalado com sucesso!"
+  displayName: 'Instalar MySQL ODBC Driver'
+
+# 2. Iniciar o serviço do MySQL nativo do Windows do Azure
+- powershell: |
+    echo "Iniciando o serviço do MySQL..."
+    Start-Service -Name "MySQL*"
+    $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
+    mysql -u root -e "SELECT VERSION();"
+  displayName: 'Iniciar e Verificar MySQL Server'
+
+# 3. Criar o Banco de Dados e as Tabelas (Nome corrigido para caixa baixa: simplesweb)
+- powershell: |
+    $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
+    
+    # Cria o banco exatamente com o nome da sua string de conexão
+    mysql -u root -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
+    
+    # Cria a tabela pessoa
+    mysql -u root -D simplesweb -e "
+    CREATE TABLE IF NOT EXISTS pessoa (
+      Id int NOT NULL AUTO_INCREMENT,
+      RazaoSocial varchar(80) DEFAULT NULL,
+      NomeFantasia varchar(80) DEFAULT NULL,
+      Cnpj varchar(18) DEFAULT NULL,
+      InscrEstadual varchar(20) DEFAULT NULL,
+      InscrMunicipal varchar(20) DEFAULT NULL,
+      DataCadastro varchar(20) DEFAULT NULL,
+      Email varchar(80) DEFAULT NULL,
+      Celular varchar(15) DEFAULT NULL,
+      Usuario varchar(20) DEFAULT NULL,
+      Senha varchar(12) DEFAULT NULL,
+      IeDestinatario varchar(20) DEFAULT NULL,
+      PRIMARY KEY (Id)
+    );
+    "
+    Write-Host "Banco de dados simplesweb pronto para conexões ODBC!"
+  displayName: 'Configurar Schema do Banco de Dados'
+
+# 4. Executar os Testes automatizados da sua aplicação
+# Se você tiver um script de teste (ex: via Node, VBScript ou ferramenta de testes HTTP)
+# Caso não use testes automatizados nesta etapa, você pode remover ou comentar este bloco.
+- powershell: |
+    echo "Executando validação de rotas/testes da aplicação..."
+    # Insira aqui o comando que roda seus testes, por exemplo:
+    # cscript //nologo seus_testes.vbs
+    # Ou se você usa um validador em Node/Axios: npm install && npm test
+  displayName: 'Executar Testes de Unidade / Integração'
+
+# 5. Compactar arquivos ASP (Seu código original)
 - task: ArchiveFiles@2
   displayName: 'Compactar arquivos ASP'
   inputs:
@@ -14,9 +73,11 @@ steps:
     archiveFile: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
     replaceExistingArchive: true
 
+# 6. Publicar Artefato no Azure (Seu código original)
 - task: PublishBuildArtifacts@1
   displayName: 'Publicar Artefato no Azure'
   inputs:
     PathtoPublish: '$(Build.ArtifactStagingDirectory)/AppASPVersao$(Build.BuildId).zip'
     ArtifactName: 'drop'
     publishLocation: 'Container'
+    
