@@ -54,8 +54,8 @@ steps:
     echo "Aguardando 15 segundos para o banco de dados iniciar na porta 3306..."
     Start-Sleep -Seconds 15
     
-    echo "Testando conectividade local usando o caminho absoluto do cliente..."
-    & "$mysqlPath\mysql.exe" -u root -p"root" -h 127.0.0.1 -e "SELECT VERSION();"
+    echo "Testando conectividade local solicitando a chave pública do servidor..."
+    & "$mysqlPath\mysql.exe" -u root -p"root" -h 127.0.0.1 --get-server-public-key -e "SELECT VERSION();"
     
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Falha ao conectar no MySQL Server local."
@@ -65,13 +65,13 @@ steps:
   
 # 4. Criar o Banco de Dados e as Tabelas (DATABASE=simplesweb)
 - powershell: |
-    $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
+    $mysqlPath = "C:\Program Files\MySQL\MySQL Server 8.0\bin"
     
     echo "Criando banco de dados se não existir..."
-    mysql -u root -p"root" -h 127.0.0.1 -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
+    & "$mysqlPath\mysql.exe" -u root -p"root" -h 127.0.0.1 --get-server-public-key -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
     
     echo "Criando a tabela pessoa..."
-    mysql -u root -p"root" -h 127.0.0.1 -D simplesweb -e "
+    & "$mysqlPath\mysql.exe" -u root -p"root" -h 127.0.0.1 --get-server-public-key -D simplesweb -e "
     CREATE TABLE IF NOT EXISTS pessoa (
       Id int NOT NULL AUTO_INCREMENT,
       RazaoSocial varchar(80) DEFAULT NULL,
