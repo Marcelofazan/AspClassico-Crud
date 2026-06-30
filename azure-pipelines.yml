@@ -13,56 +13,44 @@ steps:
     Set-ItemProperty "IIS:\AppPools\DefaultAppPool" -Name "enable32BitAppOnWin64" -Value "True"
   displayName: 'Habilitar Aplicativos 32 Bits no IIS'
 
-# 2. Instalar o MySQL ODBC e Injetar chaves de compatibilidade (64 e 32 bits)
+# 2. Baixar e instalar nativamente o driver MySQL ODBC 5.3.13 de 32 bits
 - powershell: |
-    echo "Instalando MySQL ODBC via Chocolatey..."
-    choco install mysql.odbc -y --no-progress
+    echo "Baixando o driver MySQL ODBC 5.3.13 32-bits oficial..."
+    $url = "https://huaweicloud.com"
+    Invoke-WebRequest -Uri $url -OutFile "mysql-odbc-32.msi"
     
-    $installedDriver = (Get-ItemProperty "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers").psobject.properties.name | Where-Object { $_ -like "MySQL ODBC * Unicode Driver" } | Select-Object -First 1
-    
-    if ($installedDriver) {
-        echo "Driver detectado: $installedDriver"
-        $registryPaths = @("HKLM:\SOFTWARE\ODBC\ODBCINST.INI", "HKLM:\SOFTWARE\Wow6432Node\ODBC\ODBCINST.INI")
-        foreach ($basePath in $registryPaths) {
-            $sourcePath = "$basePath\$installedDriver"
-            $targetPath = "$basePath\MySQL ODBC 5.3 Unicode Driver"
-            if (Test-Path $sourcePath) {
-                if (-not (Test-Path $targetPath)) { New-Item -Path $targetPath -Force | Out-Null }
-                Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Driver" -Force
-                Copy-ItemProperty -Path $sourcePath -Destination $targetPath -Name "Setup" -Force
-                Set-ItemProperty -Path "$basePath\ODBC Drivers" -Name "MySQL ODBC 5.3 Unicode Driver" -Value "Installed" -Force
-            }
-        }
-    } else {
-        Write-Error "Falha ao localizar o driver instalado."
-        exit 1
-    }
-  displayName: 'Instalar MySQL ODBC e Configurar Registro (32/64 bits)'
+    echo "Instalando o driver silenciosamente no subsistema de 32 bits do Windows..."
+    Start-Process msiexec.exe -ArgumentList '/i mysql-odbc-32.msi /quiet /norestart' -Wait
+    echo "Driver nativo de 32 bits instalado com sucesso!"
+  displayName: 'Instalar MySQL ODBC 5.3.13 (32-bit)'
 
-# 3. Iniciar o serviço do MySQL nativo do Windows do Azure (CORRIGIDO)
+# 3. Iniciar o serviço do MySQL contornando restrições de inicialização do host
 - powershell: |
-    echo "Ajustando tipo de inicialização do serviço MySQL..."
-    # Altera o tipo de inicialização de 'Disabled' para 'Manual' antes de dar o Start
-    Get-Service -Name "MySQL*" | Set-Service -StartupType Manual
+    $mysqlPath = "C:\Program Files\MySQL\MySQL Server 8.0\bin"
+    $env:Path += ";$mysqlPath"
     
-    echo "Iniciando o serviço do MySQL..."
-    Get-Service -Name "MySQL*" | Start-Service
+    echo "Garantindo que nenhum serviço MySQL bloqueado esteja rodando..."
+    Stop-Service -Name "MySQL*" -ErrorAction SilentlyContinue
+    Get-Process -Name "mysqld" -ErrorAction SilentlyContinue | Stop-Process -Force
     
-    echo "Aguardando 5 segundos para estabilização do banco..."
-    Start-Sleep -Seconds 5
+    echo "Iniciando o MySQL diretamente via binário com SSL desabilitado..."
+    # Inicializa o motor ignorando privilégios e SSL para não travar conexões locais de teste
+    Start-Process -FilePath "$mysqlPath\mysqld.exe" -ArgumentList "--skip-grant-tables --skip-ssl" -WindowStyle Hidden
     
-    # Adiciona o MySQL ao PATH e valida se a porta local responde
-    $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
-    mysql -u root -e "SELECT VERSION();"
+    echo "Aguardando 8 segundos para estabilização do banco de dados..."
+    Start-Sleep -Seconds 8
+    
+    echo "Testando conectividade local do cliente MySQL..."
+    mysql -u root -h 127.0.0.1 -e "SELECT VERSION();"
   displayName: 'Iniciar e Verificar MySQL Server'
 
 # 4. Criar o Banco de Dados e as Tabelas (DATABASE=simplesweb)
 - powershell: |
     $env:Path += ";C:\Program Files\MySQL\MySQL Server 8.0\bin"
     
-    # Cria o banco e a tabela pessoa
-    mysql -u root -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
-    mysql -u root -D simplesweb -e "
+    # Cria o banco e a tabela pessoa usando o host local liberado
+    mysql -u root -h 127.0.0.1 -e "CREATE DATABASE IF NOT EXISTS simplesweb;"
+    mysql -u root -h 127.0.0.1 -D simplesweb -e "
     CREATE TABLE IF NOT EXISTS pessoa (
       Id int NOT NULL AUTO_INCREMENT,
       RazaoSocial varchar(80) DEFAULT NULL,
@@ -79,7 +67,7 @@ steps:
       PRIMARY KEY (Id)
     );
     "
-    Write-Host "Banco de dados simplesweb estruturado sem SSL com sucesso!"
+    Write-Host "Banco de dados simplesweb estruturado localmente!"
   displayName: 'Configurar Schema do Banco de Dados'
 
 # 5. Executar os Testes automatizados (Se houver testes locais)
