@@ -5,12 +5,12 @@ pool:
   vmImage: 'windows-latest'
 
 steps:
-# 1. Instalar o MySQL ODBC Driver via Chocolatey (Sem risco de bloqueio de download)
+# 1. Instalar o MySQL ODBC Driver 5.3 exato via Chocolatey (Nome correto: mysql.odbc)
 - powershell: |
-    echo "Instalando o conector MySQL ODBC de forma silenciosa via Chocolatey..."
-    # Força o Chocolatey a instalar a versão estável do conector
-    choco install mysql-connector-odbc --version=8.0.28 -y --no-progress
-    echo "Driver ODBC configurado com sucesso no agente do Azure!"
+    echo "Instalando o conector MySQL ODBC 5.3 de forma silenciosa..."
+    # Usando o nome correto 'mysql.odbc' e travando na versão correspondente à sua string de conexão
+    choco install mysql.odbc --version=5.3.14 -y --no-progress
+    echo "Driver ODBC 5.3 instalado com sucesso no agente!"
   displayName: 'Instalar MySQL ODBC Driver'
 
 # 2. Iniciar o serviço do MySQL nativo do Windows do Azure
@@ -49,11 +49,10 @@ steps:
     Write-Host "Banco de dados simplesweb pronto para conexões ODBC!"
   displayName: 'Configurar Schema do Banco de Dados'
 
-# 4. Executar os Testes automatizados (Insira os comandos de teste da sua aplicação se houver)
+# 4. Executar os Testes automatizados (Adicione aqui se você usar testes locais)
 - powershell: |
     echo "Executando validação de rotas/testes da aplicação..."
-    # Exemplo caso use testes em Node/Axios: 
-    # npm install && npm test
+    # Exemplo: npm install && npm test
   displayName: 'Executar Testes de Unidade / Integração'
 
 # 5. Compactar arquivos ASP (Seu código original)
